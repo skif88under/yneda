@@ -7,110 +7,122 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-# --- LOAD ENV ---
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 REG_URL = os.getenv("REG_URL")
-CHANNEL_LINK = f"https://t.me/{CHANNEL_ID.replace('@', '')}"
 
-if not TOKEN or not CHANNEL_ID:
-    raise ValueError("Проверь .env файл")
+CHANNEL_LINK = f"https://t.me/{CHANNEL_ID.replace('@', '')}"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 
 # =========================
-# 🔘 КНОПКИ
+# КНОПКИ
 # =========================
-def check_sub_keyboard():
+def sub_keyboard():
     kb = InlineKeyboardBuilder()
-    kb.button(text="📢 Подписаться", url=CHANNEL_LINK)
+    kb.button(text="📢 Подписаться на канал", url=CHANNEL_LINK)
     kb.button(text="✅ Я подписался", callback_data="check_sub")
     kb.adjust(1)
     return kb.as_markup()
 
 
-def register_keyboard():
+def reg_keyboard():
     kb = InlineKeyboardBuilder()
-    kb.button(text="🚴 Пройти регистрацию", url=REG_URL)
+    kb.button(text="🚴 Начать зарабатывать", url=REG_URL)
     return kb.as_markup()
 
 
 # =========================
-# 🧠 УМНАЯ ПРОВЕРКА ПОДПИСКИ
+# ПРОВЕРКА ПОДПИСКИ
 # =========================
-async def check_subscription(user_id: int) -> bool:
-    """
-    Надёжная проверка подписки с повторной попыткой
-    """
-    for attempt in range(2):  # 2 попытки
+async def check_subscription(user_id: int):
+    for _ in range(2):
         try:
             member = await bot.get_chat_member(CHANNEL_ID, user_id)
-
-            print(f"[DEBUG] user={user_id}, status={member.status}")
-
             if member.status not in ("left", "kicked"):
                 return True
-
-        except Exception as e:
-            print(f"[ERROR] Проверка подписки: {e}")
-
-        await asyncio.sleep(2)  # задержка перед повтором
-
+        except:
+            pass
+        await asyncio.sleep(2)
     return False
 
 
 # =========================
-# 🚀 START
+# START (ПРОДАЮЩИЙ)
 # =========================
 @dp.message(CommandStart())
 async def start(message: Message):
     text = (
         "🚴‍♂️ Работа курьером Яндекс Еда\n\n"
-        "📌 Чтобы начать:\n"
-        "1. Подпишись на канал\n"
-        "2. Пройди регистрацию\n"
-        "3. Начни получать заказы\n\n"
-        "👇 Нажми кнопку ниже"
+        "💰 Доход до 3000₽ в день\n"
+        "📍 Свободный график\n"
+        "⚡ Старт за 15 минут\n\n"
+        "👥 Уже работают 12 000+ курьеров\n\n"
+        "🔒 Доступ к заказам и инструкциям — только после подписки\n\n"
+        "👇 Подпишись, чтобы продолжить"
     )
 
-    await message.answer(text, reply_markup=check_sub_keyboard())
+    await message.answer(text, reply_markup=sub_keyboard())
 
 
 # =========================
-# ✅ ПРОВЕРКА ПОДПИСКИ
+# ПРОВЕРКА
 # =========================
 @dp.callback_query(F.data == "check_sub")
 async def check_sub(callback: CallbackQuery):
     user_id = callback.from_user.id
 
-    await callback.answer("Проверяю подписку...")
+    await callback.answer("Проверяю...")
 
-    is_sub = await check_subscription(user_id)
+    if await check_subscription(user_id):
 
-    if is_sub:
+        # основной оффер
         await callback.message.answer(
-            "✅ Подписка подтверждена!\n\n"
-            "🚴 Теперь переходи к регистрации:",
-            reply_markup=register_keyboard()
+            "✅ Отлично!\n\n"
+            "🔥 Теперь ты получишь доступ к работе\n\n"
+            "👇 Пройди регистрацию:",
+            reply_markup=reg_keyboard()
         )
+
+        # 🔥 ДОЖИМ через 10 минут
+        asyncio.create_task(reminder(callback.from_user.id))
+
     else:
         await callback.message.answer(
-            "❌ Пока не вижу подписку\n\n"
-            "📢 Подпишись на канал и нажми кнопку снова.\n\n"
-            "⚠️ Иногда Telegram обновляет статус с задержкой (5-10 сек)",
-            reply_markup=check_sub_keyboard()
+            "❌ Не вижу подписку\n\n"
+            "⚠️ Подпишись и попробуй снова",
+            reply_markup=sub_keyboard()
         )
 
 
 # =========================
-# ▶️ ЗАПУСК
+# ДОЖИМ (КОНВЕРСИЯ x2)
+# =========================
+async def reminder(user_id: int):
+    await asyncio.sleep(600)  # 10 минут
+
+    try:
+        await bot.send_message(
+            user_id,
+            "⏳ Ты не завершил регистрацию\n\n"
+            "💰 Курьеры уже зарабатывают сегодня\n"
+            "Не упусти возможность\n\n"
+            "👇 Заверши регистрацию:",
+            reply_markup=reg_keyboard()
+        )
+    except:
+        pass
+
+
+# =========================
+# ЗАПУСК
 # =========================
 async def main():
-    print("Бот запущен 🚀")
+    print("Бот работает 🚀")
     await dp.start_polling(bot)
 
 
