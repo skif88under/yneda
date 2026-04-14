@@ -1,3 +1,5 @@
+ACTIVE_USERS = set()
+REGISTERED_USERS = set()
 import asyncio
 import os
 
@@ -71,6 +73,7 @@ async def check_subscription(user_id: int) -> bool:
 # =========================
 @dp.message(CommandStart())
 async def start(message: Message):
+    ACTIVE_USERS.add(message.from_user.id)
     text = (
         "🚴‍♂️ Работа курьером Яндекс Еда\n\n"
         "💰 Доход до 3000₽ в день\n"
@@ -116,6 +119,8 @@ async def faq(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "check_sub")
 async def check_sub_handler(callback: CallbackQuery):
+    REGISTERED_USERS.add(user_id)
+    asyncio.create_task(donut_reminder(user_id))
     user_id = callback.from_user.id
 
     await callback.answer("Проверяю подписку...")
@@ -132,6 +137,50 @@ async def check_sub_handler(callback: CallbackQuery):
             "Подпишись и нажми снова:",
             reply_markup=sub_kb()
         )
+
+
+async def donut_reminder(user_id: int):
+    if user_id in REGISTERED_USERS:
+        return  # уже конвертирован
+
+    # ⏳ 10 минут
+    await asyncio.sleep(600)
+
+    if user_id in REGISTERED_USERS:
+        return
+
+    await bot.send_message(
+        user_id,
+        "⏳ Ты почти начал зарабатывать\n\n"
+        "💰 Курьеры уже получают заказы сегодня\n\n"
+        "👇 Остался последний шаг:"
+    )
+
+    # ⏳ 1 час
+    await asyncio.sleep(3600)
+
+    if user_id in REGISTERED_USERS:
+        return
+
+    await bot.send_message(
+        user_id,
+        "🔥 Сейчас высокий спрос на курьеров\n\n"
+        "💰 Можно выйти и начать зарабатывать\n\n"
+        "👇 Не упусти:"
+    )
+
+    # ⏳ 24 часа
+    await asyncio.sleep(86400)
+
+    if user_id in REGISTERED_USERS:
+        return
+
+    await bot.send_message(
+        user_id,
+        "🚀 Последний шанс подключиться\n\n"
+        "💰 Курьеры уже работают и получают деньги\n\n"
+        "👇 Начать сейчас:"
+    )
 
 
 # =========================
