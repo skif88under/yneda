@@ -1,35 +1,30 @@
 import asyncio
 import os
-import random
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 REG_URL = os.getenv("REG_URL")
 
+if not TOKEN or not CHANNEL_ID or not REG_URL:
+    raise ValueError("❌ Проверь .env файл (BOT_TOKEN, CHANNEL_ID, REG_URL)")
+
 CHANNEL_LINK = f"https://t.me/{CHANNEL_ID.replace('@', '')}"
 
+# =========================
+# INIT BOT
+# =========================
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# =========================
-# ДАННЫЕ
-# =========================
-NAMES = ["Алексей", "Иван", "Дмитрий", "Максим", "Сергей"]
-
-CHAT_FLOW = [
-    "Сегодня сделал 3100₽ 🔥",
-    "Заказов реально много",
-    "Подключился вчера — уже работаю",
-    "Вечером пик, хорошо платят",
-]
 
 # =========================
-# КНОПКИ
+# KEYBOARDS
 # =========================
 def main_menu():
     kb = InlineKeyboardBuilder()
@@ -50,170 +45,102 @@ def sub_kb():
 
 def reg_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="🚴 Перейти к регистрации", url=REG_URL)
-    return kb.as_markup()
-
-
-def back_menu():
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⬅️ Назад", callback_data="menu")
+    kb.button(text="🚀 Начать работу", url=REG_URL)
     return kb.as_markup()
 
 
 # =========================
-# ПРОВЕРКА ПОДПИСКИ
+# CHECK SUB
 # =========================
-async def check_subscription(user_id):
+async def check_subscription(user_id: int) -> bool:
     for _ in range(2):
         try:
             member = await bot.get_chat_member(CHANNEL_ID, user_id)
             if member.status not in ("left", "kicked"):
                 return True
-        except:
-            pass
+        except Exception as e:
+            print("check_sub error:", e)
+
         await asyncio.sleep(2)
+
     return False
-
-
-# =========================
-# LIVE CHAT
-# =========================
-async def live_chat(user_id):
-    await asyncio.sleep(2)
-    await bot.send_message(user_id, "💬 Подключение к чату курьеров...")
-
-    for _ in range(3):
-        name = random.choice(NAMES)
-        msg = random.choice(CHAT_FLOW)
-        await asyncio.sleep(2)
-        await bot.send_message(user_id, f"👤 {name}: {msg}")
-
-
-# =========================
-# ДОЖИМ
-# =========================
-async def reminder(user_id):
-    await asyncio.sleep(600)
-    await bot.send_message(
-        user_id,
-        "⏳ Ты не завершил регистрацию\n\n"
-        "💰 Можно начать уже сегодня",
-        reply_markup=reg_kb()
-    )
 
 
 # =========================
 # START
 # =========================
-@dp.message(CommandStart(deep_link=True))
-async def start(message: Message, command: CommandStart):
-    user_name = message.from_user.first_name
-    spots = random.randint(5, 20)
-
+@dp.message(CommandStart())
+async def start(message: Message):
     text = (
-        f"👋 {user_name}, работа курьером Яндекс Еда\n\n"
+        "🚴‍♂️ Работа курьером Яндекс Еда\n\n"
         "💰 Доход до 3000₽ в день\n"
         "⚡ Старт за 15 минут\n\n"
-        f"⚠️ Осталось {spots} мест\n\n"
-        "👇 Выбери, что тебе нужно"
+        "👇 Выбери действие:"
     )
 
     await message.answer(text, reply_markup=main_menu())
 
 
 # =========================
-# МЕНЮ
-# =========================
-@dp.callback_query(F.data == "menu")
-async def menu(callback: CallbackQuery):
-    await callback.message.answer("👇 Выбери:", reply_markup=main_menu())
-
-
-# =========================
-# ВЕТКА 1 — НОВЫЙ
+# MENU
 # =========================
 @dp.callback_query(F.data == "new")
 async def new_user(callback: CallbackQuery):
     await callback.message.answer(
-        "🚀 Начнём подключение\n\n"
-        "📢 Подпишись на канал для доступа",
+        "🚀 Начнём\n\n"
+        "📢 Подпишись на канал для доступа:",
         reply_markup=sub_kb()
     )
 
 
-# =========================
-# ВЕТКА 2 — УЖЕ КУРЬЕР
-# =========================
 @dp.callback_query(F.data == "old")
 async def old_user(callback: CallbackQuery):
     await callback.message.answer(
         "💬 Доступ к чату курьеров\n\n"
-        "📢 Подпишись на канал, чтобы:\n"
-        "— общаться с курьерами\n"
-        "— получать лайфхаки\n"
-        "— видеть реальные доходы\n\n"
-        "👇 После подписки нажми кнопку",
+        "📢 Подпишись, чтобы получить доступ:",
         reply_markup=sub_kb()
     )
 
 
-# =========================
-# ВЕТКА 3 — FAQ
-# =========================
 @dp.callback_query(F.data == "faq")
 async def faq(callback: CallbackQuery):
-    text = (
-        "❓ Частые вопросы\n\n"
-        "💰 Сколько платят?\n"
-        "— до 3000₽ в день\n\n"
-        "📍 Нужен ли опыт?\n"
-        "— нет\n\n"
-        "📱 Что нужно?\n"
-        "— телефон\n\n"
-        "👇 Выбери действие"
+    await callback.message.answer(
+        "❓ FAQ\n\n"
+        "💰 Доход: до 3000₽\n"
+        "📍 Опыт не нужен\n"
+        "📱 Нужен только телефон\n\n"
+        "👇 Вернуться в меню",
+        reply_markup=main_menu()
     )
 
-    await callback.message.answer(text, reply_markup=main_menu())
 
-
-# =========================
-# ПРОВЕРКА ПОДПИСКИ
-# =========================
 @dp.callback_query(F.data == "check_sub")
-async def check_sub(callback: CallbackQuery):
+async def check_sub_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
 
+    await callback.answer("Проверяю подписку...")
+
     if await check_subscription(user_id):
-
-        await callback.message.answer("✅ Доступ подтверждён")
-
-        asyncio.create_task(live_chat(user_id))
-
-        await asyncio.sleep(4)
-
         await callback.message.answer(
-            "🔓 Доступ открыт\n\n"
-            "👇 Выбери действие:",
+            "✅ Доступ открыт!\n\n"
+            "🚀 Остался последний шаг:",
             reply_markup=reg_kb()
         )
-
-        asyncio.create_task(reminder(user_id))
-
     else:
         await callback.message.answer(
-            "❌ Подпишись на канал",
+            "❌ Подписка не найдена\n\n"
+            "Подпишись и нажми снова:",
             reply_markup=sub_kb()
         )
 
 
 # =========================
-# RUN
+# START BOT
 # =========================
 async def main():
-    print("🔥 Бот с ветками запущен")
+    print("🚀 Bot started")
     await dp.start_polling(bot)
 
-print("TOKEN:", TOKEN)
-print("CHANNEL:", CHANNEL_ID)
+
 if __name__ == "__main__":
     asyncio.run(main())
