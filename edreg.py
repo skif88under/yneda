@@ -119,24 +119,24 @@ async def faq(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "check_sub")
 async def check_sub_handler(callback: CallbackQuery):
-    REGISTERED_USERS.add(user_id)
-    asyncio.create_task(donut_reminder(user_id))
-    user_id = callback.from_user.id
+    await callback.answer()
 
-    await callback.answer("Проверяю подписку...")
+    user_id = callback.from_user.id  # 🔥 ВАЖНО
 
     if await check_subscription(user_id):
+        REGISTERED_USERS.add(user_id)
+
         await callback.message.answer(
             "✅ Доступ открыт!\n\n"
-            "🚀 Остался последний шаг:",
-            reply_markup=reg_kb()
+            "🚀 Остался последний шаг:"
         )
+
     else:
         await callback.message.answer(
-            "❌ Подписка не найдена\n\n"
-            "Подпишись и нажми снова:",
-            reply_markup=sub_kb()
+            "❌ Подпишись на канал"
         )
+
+    
 
 
 async def donut_reminder(user_id: int):
