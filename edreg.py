@@ -1,5 +1,3 @@
-ACTIVE_USERS = set()
-REGISTERED_USERS = set()
 import asyncio
 import os
 
@@ -14,19 +12,23 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 REG_URL = os.getenv("REG_URL")
 
 if not TOKEN or not CHANNEL_ID or not REG_URL:
-    raise ValueError("❌ Проверь .env файл (BOT_TOKEN, CHANNEL_ID, REG_URL)")
+    raise ValueError("❌ Проверь .env файл")
 
 CHANNEL_LINK = f"https://t.me/{CHANNEL_ID.replace('@', '')}"
 
 # =========================
-# INIT BOT
+# INIT
 # =========================
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+# =========================
+# MEMORY (для дожима)
+# =========================
+REGISTERED_USERS = set()
 
 # =========================
-# KEYBOARDS
+# КНОПКИ
 # =========================
 def main_menu():
     kb = InlineKeyboardBuilder()
@@ -52,7 +54,7 @@ def reg_kb():
 
 
 # =========================
-# CHECK SUB
+# ПРОВЕРКА ПОДПИСКИ
 # =========================
 async def check_subscription(user_id: int) -> bool:
     for _ in range(2):
@@ -61,11 +63,42 @@ async def check_subscription(user_id: int) -> bool:
             if member.status not in ("left", "kicked"):
                 return True
         except Exception as e:
-            print("check_sub error:", e)
-
+            print("Ошибка проверки:", e)
         await asyncio.sleep(2)
-
     return False
+
+
+# =========================
+# ДОЖИМ
+# =========================
+async def reminder(user_id: int):
+    try:
+        await asyncio.sleep(600)
+
+        if user_id in REGISTERED_USERS:
+            return
+
+        await bot.send_message(
+            user_id,
+            "⏳ Ты не завершил регистрацию\n\n"
+            "💰 Можно начать уже сегодня",
+            reply_markup=reg_kb()
+        )
+
+        await asyncio.sleep(3600)
+
+        if user_id in REGISTERED_USERS:
+            return
+
+        await bot.send_message(
+            user_id,
+            "🔥 Сейчас высокий спрос на курьеров\n\n"
+            "👇 Успей подключиться",
+            reply_markup=reg_kb()
+        )
+
+    except Exception as e:
+        print("Ошибка дожима:", e)
 
 
 # =========================
@@ -73,7 +106,6 @@ async def check_subscription(user_id: int) -> bool:
 # =========================
 @dp.message(CommandStart())
 async def start(message: Message):
-    ACTIVE_USERS.add(message.from_user.id)
     text = (
         "🚴‍♂️ Работа курьером Яндекс Еда\n\n"
         "💰 Доход до 3000₽ в день\n"
@@ -85,19 +117,23 @@ async def start(message: Message):
 
 
 # =========================
-# MENU
+# ВЕТКИ
 # =========================
 @dp.callback_query(F.data == "new")
 async def new_user(callback: CallbackQuery):
+    await callback.answer()
+
     await callback.message.answer(
-        "🚀 Начнём\n\n"
-        "📢 Подпишись на канал для доступа:",
+        "🚀 Начнём подключение\n\n"
+        "📢 Подпишись на канал:",
         reply_markup=sub_kb()
     )
 
 
 @dp.callback_query(F.data == "old")
 async def old_user(callback: CallbackQuery):
+    await callback.answer()
+
     await callback.message.answer(
         "💬 Доступ к чату курьеров\n\n"
         "📢 Подпишись, чтобы получить доступ:",
@@ -107,87 +143,50 @@ async def old_user(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "faq")
 async def faq(callback: CallbackQuery):
+    await callback.answer()
+
     await callback.message.answer(
-        "❓ FAQ\n\n"
+        "❓ Частые вопросы\n\n"
         "💰 Доход: до 3000₽\n"
         "📍 Опыт не нужен\n"
-        "📱 Нужен только телефон\n\n"
-        "👇 Вернуться в меню",
+        "📱 Нужен только телефон",
         reply_markup=main_menu()
     )
 
 
+# =========================
+# ПРОВЕРКА ПОДПИСКИ
+# =========================
 @dp.callback_query(F.data == "check_sub")
 async def check_sub_handler(callback: CallbackQuery):
     await callback.answer()
 
-    user_id = callback.from_user.id  # 🔥 ВАЖНО
+    user_id = callback.from_user.id  # 🔥 фикс ошибки
 
     if await check_subscription(user_id):
         REGISTERED_USERS.add(user_id)
 
         await callback.message.answer(
-            "✅ Доступ открыт!\n\n"
-            "🚀 Остался последний шаг:"
+            "✅ Подписка подтверждена!\n\n"
+            "🚀 Остался последний шаг:",
+            reply_markup=reg_kb()
         )
+
+        asyncio.create_task(reminder(user_id))
 
     else:
         await callback.message.answer(
-            "❌ Подпишись на канал"
+            "❌ Подписка не найдена\n\n"
+            "Подпишись и нажми снова:",
+            reply_markup=sub_kb()
         )
 
-    
-
-
-async def donut_reminder(user_id: int):
-    if user_id in REGISTERED_USERS:
-        return  # уже конвертирован
-
-    # ⏳ 10 минут
-    await asyncio.sleep(600)
-
-    if user_id in REGISTERED_USERS:
-        return
-
-    await bot.send_message(
-        user_id,
-        "⏳ Ты почти начал зарабатывать\n\n"
-        "💰 Курьеры уже получают заказы сегодня\n\n"
-        "👇 Остался последний шаг:"
-    )
-
-    # ⏳ 1 час
-    await asyncio.sleep(3600)
-
-    if user_id in REGISTERED_USERS:
-        return
-
-    await bot.send_message(
-        user_id,
-        "🔥 Сейчас высокий спрос на курьеров\n\n"
-        "💰 Можно выйти и начать зарабатывать\n\n"
-        "👇 Не упусти:"
-    )
-
-    # ⏳ 24 часа
-    await asyncio.sleep(86400)
-
-    if user_id in REGISTERED_USERS:
-        return
-
-    await bot.send_message(
-        user_id,
-        "🚀 Последний шанс подключиться\n\n"
-        "💰 Курьеры уже работают и получают деньги\n\n"
-        "👇 Начать сейчас:"
-    )
-
 
 # =========================
-# START BOT
+# RUN
 # =========================
 async def main():
-    print("🚀 Bot started")
+    print("🚀 Бот запущен")
     await dp.start_polling(bot)
 
 
