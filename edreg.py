@@ -8,127 +8,46 @@ from aiogram.filters import CommandStart
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
-with open("faq.json", "r", encoding="utf-8") as f:
-    FAQ_DATA = json.load(f)
-
-with open("cities.json", "r", encoding="utf-8") as f:
-    raw_data = json.load(f)
-
-# делаем быстрый доступ по городу
-EARNINGS = {item["city"].lower(): item for item in raw_data}
-
 TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
 REG_URL = os.getenv("REG_URL")
 
-if not TOKEN or not CHANNEL_ID or not REG_URL:
-    raise ValueError("❌ Проверь .env файл")
-
-CHANNEL_LINK = f"https://t.me/{CHANNEL_ID.replace('@', '')}"
-
-# =========================
-# INIT
-# =========================
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # =========================
-# MEMORY (для дожима)
+# DATA
 # =========================
-REGISTERED_USERS = set()
+with open("cities.json", "r", encoding="utf-8") as f:
+    raw = json.load(f)
+
+EARNINGS = {i["city"].lower(): i for i in raw}
 
 # =========================
-# КНОПКИ
+# ARBITRAGE TRACKING (RAM)
 # =========================
-def faq_kb():
-    kb = InlineKeyboardBuilder()
+USER_STAGE = {}   # cold / warm / hot
+EVENTS = {
+    "earnings_open": 0,
+    "city_entered": 0,
+    "reg_click": 0
+}
 
-    for i, item in enumerate(FAQ_DATA["faq"]):
-        kb.button(text=item["q"], callback_data=f"faq_{i}")
-
-    kb.button(text="⬅️ Назад", callback_data="menu")
-    kb.adjust(1)
-
-    return kb.as_markup()
+# =========================
+# KEYBOARDS
+# =========================
 def main_menu():
     kb = InlineKeyboardBuilder()
-    kb.button(text="💰 Узнать доход", callback_data="earnings")
-    kb.button(text="🚴 Стать курьером", callback_data="new")
-    kb.button(text="💬 Я уже курьер", callback_data="old")
-    kb.button(text="❓ Вопросы", callback_data="faq")
-    kb.adjust(1)
-    return kb.as_markup()
-
-
-def sub_kb():
-    kb = InlineKeyboardBuilder()
-    kb.button(text="📢 Подписаться", url=CHANNEL_LINK)
-    kb.button(text="✅ Я подписался", callback_data="check_sub")
+    kb.button(text="💰 Доход", callback_data="earnings")
+    kb.button(text="🚀 Начать", callback_data="start")
     kb.adjust(1)
     return kb.as_markup()
 
 
 def reg_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="🚀 Начать работу", url=REG_URL)
-    return kb.as_markup()
-
-def transport_kb(city):
-    kb = InlineKeyboardBuilder()
-
-    kb.button(text="🚶 Пеший", callback_data=f"type_{city}_foot")
-    kb.button(text="🚴 Вело", callback_data=f"type_{city}_bike")
-    kb.button(text="🚗 Авто", callback_data=f"type_{city}_auto")
-
+    kb.button(text="🚴 Начать зарабатывать", url=REG_URL)
     kb.adjust(1)
     return kb.as_markup()
-
-# =========================
-# ПРОВЕРКА ПОДПИСКИ
-# =========================
-async def check_subscription(user_id: int) -> bool:
-    for _ in range(2):
-        try:
-            member = await bot.get_chat_member(CHANNEL_ID, user_id)
-            if member.status not in ("left", "kicked"):
-                return True
-        except Exception as e:
-            print("Ошибка проверки:", e)
-        await asyncio.sleep(2)
-    return False
-
-
-# =========================
-# ДОЖИМ
-# =========================
-async def reminder(user_id: int):
-    try:
-        await asyncio.sleep(600)
-
-        if user_id in REGISTERED_USERS:
-            return
-
-        await bot.send_message(
-            user_id,
-            "⏳ Ты не завершил регистрацию\n\n"
-            "💰 Можно начать уже сегодня",
-            reply_markup=reg_kb()
-        )
-
-        await asyncio.sleep(3600)
-
-        if user_id in REGISTERED_USERS:
-            return
-
-        await bot.send_message(
-            user_id,
-            "🔥 Сейчас высокий спрос на курьеров\n\n"
-            "👇 Успей подключиться",
-            reply_markup=reg_kb()
-        )
-
-    except Exception as e:
-        print("Ошибка дожима:", e)
 
 
 # =========================
@@ -136,20 +55,42 @@ async def reminder(user_id: int):
 # =========================
 @dp.message(CommandStart())
 async def start(message: Message):
-    text = (
-        "🚴‍♂️ Работа курьером Яндекс Еда\n\n"
-        "💰 Доход до 3000₽ в день\n"
-        "⚡ Старт за 15 минут\n\n"
-        "👇 Выбери действие:"
+    user_id = message.from_user.id
+    USER_STAGE[user_id] = "cold"
+
+    await message.answer(
+        "🚴 Курьерская работа\n\n"
+        "💰 Узнай доход в твоём городе",
+        reply_markup=main_menu()
     )
 
-    await message.answer(text, reply_markup=main_menu())
 
+# =========================
+# ENTRY POINT
+# =========================
+@dp.callback_query(F.data == "earnings")
+async def earnings(callback: CallbackQuery):
+    await callback.answer()
+
+    user_id = callback.from_user.id
+    USER_STAGE[user_id] = "warm"
+
+    EVENTS["earnings_open"] += 1
+
+    await callback.message.answer(
+        "📍 Напиши свой город\n\n"
+        "💡 Пример: Москва"
+    )
+
+
+# =========================
+# CITY HANDLER (PRO LOGIC)
+# =========================
 @dp.message()
 async def city_handler(message: Message):
     user_id = message.from_user.id
 
-    if USER_STATE.get(user_id) != "waiting_city":
+    if USER_STAGE.get(user_id) != "warm":
         return
 
     city = message.text.lower().strip()
@@ -157,135 +98,55 @@ async def city_handler(message: Message):
     data = EARNINGS.get(city)
 
     if not data:
-        await message.answer(
-            "❌ Город не найден\n\nПопробуй ещё раз"
-        )
-        return
-
-    USER_STATE[user_id] = f"city_{city}"
-
-    await message.answer(
-        f"📍 {data['city']}\n\nВыбери тип:",
-        reply_markup=transport_kb(data["city"])
-    )
-
-
-# =========================
-# ВЕТКИ
-# =========================
-USER_STATE = {}
-
-@dp.callback_query(F.data == "earnings")
-async def earnings_start(callback: CallbackQuery):
-    await callback.answer()
-
-    USER_STATE[callback.from_user.id] = "waiting_city"
-
-    await callback.message.answer(
-        "🏙️ Напиши свой город\n\n"
-        "Например: Москва"
-    )
-    
-@dp.callback_query(F.data == "new")
-async def new_user(callback: CallbackQuery):
-    await callback.answer()
-
-    await callback.message.answer(
-        "🚀 Начнём подключение\n\n"
-        "📢 Подпишись на канал:",
-        reply_markup=sub_kb()
-    )
-
-
-@dp.callback_query(F.data == "old")
-async def old_user(callback: CallbackQuery):
-    await callback.answer()
-
-    await callback.message.answer(
-        "💬 Доступ к чату курьеров\n\n"
-        "📢 Подпишись, чтобы получить доступ:",
-        reply_markup=sub_kb()
-    )
-
-
-@dp.callback_query(F.data == "faq")
-async def faq(callback: CallbackQuery):
-    await callback.answer()
-
-    await callback.message.answer(
-        "❓ Выбери вопрос:",
-        reply_markup=faq_kb()
-    )
-
-@dp.callback_query(F.data.startswith("faq_"))
-async def faq_answer(callback: CallbackQuery):
-    await callback.answer()
-
-    index = int(callback.data.split("_")[1])
-    item = FAQ_DATA["faq"][index]
-
-    await callback.message.answer(
-        f"{item['q']}\n\n{item['a']}",
-        reply_markup=faq_kb()
-    )
-
-@dp.callback_query(F.data.startswith("type_"))
-async def show_earnings(callback: CallbackQuery):
-    await callback.answer()
-
-    _, city, t = callback.data.split("_", 2)
-
-    data = EARNINGS.get(city.lower())
+        for k in EARNINGS:
+            if city in k:
+                data = EARNINGS[k]
+                break
 
     if not data:
-        await callback.message.answer("❌ Ошибка")
+        await message.answer("❌ Город не найден")
         return
 
-    money = data[t]
+    USER_STAGE[user_id] = "hot"
+    EVENTS["city_entered"] += 1
 
+    # 💣 PRO FOMO + CTA
     text = (
-        f"💰 {data['city']}\n\n"
-        f"🚴 Тип: {t}\n\n"
-        f"📈 {money}₽/час\n\n"
-        f"💵 ~{money * 8}₽ в день\n\n"
-        "🔥 Можно начать уже сегодня\n\n"
-        "👇 Начать:"
+        f"📍 {data['city']}\n\n"
+        f"🚶 Пеший: {data['foot']}₽/час\n"
+        f"🚴 Вело: {data['bike']}₽/час\n"
+        f"🚗 Авто: {data['auto']}₽/час\n\n"
+        f"🔥 Сейчас высокий спрос в этом городе\n"
+        f"⚡ Подключаются новые курьеры прямо сегодня\n\n"
+        "👇 Начни сейчас"
     )
 
-    await callback.message.answer(text, reply_markup=reg_kb())
+    await message.answer(text, reply_markup=reg_kb())
+
+
 # =========================
-# ПРОВЕРКА ПОДПИСКИ
+# FAST LANE (ПРОДАЖА СРАЗУ)
 # =========================
-@dp.callback_query(F.data == "check_sub")
-async def check_sub_handler(callback: CallbackQuery):
+@dp.callback_query(F.data == "start")
+async def fast_start(callback: CallbackQuery):
     await callback.answer()
 
-    user_id = callback.from_user.id  # 🔥 фикс ошибки
+    user_id = callback.from_user.id
+    USER_STAGE[user_id] = "hot"
 
-    if await check_subscription(user_id):
-        REGISTERED_USERS.add(user_id)
-
-        await callback.message.answer(
-            "✅ Подписка подтверждена!\n\n"
-            "🚀 Остался последний шаг:",
-            reply_markup=reg_kb()
-        )
-
-        asyncio.create_task(reminder(user_id))
-
-    else:
-        await callback.message.answer(
-            "❌ Подписка не найдена\n\n"
-            "Подпишись и нажми снова:",
-            reply_markup=sub_kb()
-        )
+    await callback.message.answer(
+        "🚀 Быстрый старт\n\n"
+        "💰 Можно начать за 15 минут\n\n"
+        "👇 Подключение:",
+        reply_markup=reg_kb()
+    )
 
 
 # =========================
 # RUN
 # =========================
 async def main():
-    print("🚀 Бот запущен")
+    print("🔥 ARBITRAGE PRO RUNNING")
     await dp.start_polling(bot)
 
 
