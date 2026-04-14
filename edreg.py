@@ -2,17 +2,23 @@ import asyncio
 import os
 import json
 
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-
 TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 REG_URL = os.getenv("REG_URL")
+
+if not TOKEN or not CHANNEL_ID or not REG_URL:
+    raise ValueError("❌ Проверь .env")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
+CHANNEL_LINK = f"https://t.me/{CHANNEL_ID.replace('@','')}"
 
 # =========================
 # DATA
@@ -22,15 +28,15 @@ with open("cities.json", "r", encoding="utf-8") as f:
 
 EARNINGS = {i["city"].lower(): i for i in raw}
 
+with open("faq.json", "r", encoding="utf-8") as f:
+    FAQ = json.load(f)
+
 # =========================
-# ARBITRAGE TRACKING (RAM)
+# STATE
 # =========================
-USER_STAGE = {}   # cold / warm / hot
-EVENTS = {
-    "earnings_open": 0,
-    "city_entered": 0,
-    "reg_click": 0
-}
+USER_STAGE = {}
+USER_STATE = {}
+SUBSCRIBED = set()
 
 # =========================
 # KEYBOARDS
@@ -38,7 +44,16 @@ EVENTS = {
 def main_menu():
     kb = InlineKeyboardBuilder()
     kb.button(text="💰 Доход", callback_data="earnings")
-    kb.button(text="🚀 Начать", callback_data="start")
+    kb.button(text="🚀 Начать", callback_data="start_work")
+    kb.button(text="❓ Вопросы", callback_data="faq")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def sub_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📢 Подписаться", url=CHANNEL_LINK)
+    kb.button(text="✅ Я подписался", callback_data="check_sub")
     kb.adjust(1)
     return kb.as_markup()
 
@@ -46,8 +61,35 @@ def main_menu():
 def reg_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="🚴 Начать зарабатывать", url=REG_URL)
+    kb.button(text="🏠 В меню", callback_data="menu")
     kb.adjust(1)
     return kb.as_markup()
+
+
+def back_menu():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🏠 В меню", callback_data="menu")
+    return kb.as_markup()
+
+
+def faq_kb():
+    kb = InlineKeyboardBuilder()
+    for i, item in enumerate(FAQ["faq"]):
+        kb.button(text=item["q"], callback_data=f"faq_{i}")
+    kb.button(text="🏠 В меню", callback_data="menu")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+# =========================
+# ПРОВЕРКА ПОДПИСКИ
+# =========================
+async def check_sub(user_id):
+    try:
+        member = await bot.get_chat_member(CHANNEL_ID, user_id)
+        return member.status not in ("left", "kicked")
+    except:
+        return False
 
 
 # =========================
@@ -55,46 +97,101 @@ def reg_kb():
 # =========================
 @dp.message(CommandStart())
 async def start(message: Message):
-    user_id = message.from_user.id
-    USER_STAGE[user_id] = "cold"
+    USER_STAGE[message.from_user.id] = "cold"
 
     await message.answer(
-        "🚴 Курьерская работа\n\n"
-        "💰 Узнай доход в твоём городе",
-        reply_markup=main_menu()
+        "🚴 Работа курьером\n\n"
+        "📢 Подпишись на канал:",
+        reply_markup=sub_kb()
     )
 
 
 # =========================
-# ENTRY POINT
+# ПРОВЕРКА ПОДПИСКИ
+# =========================
+@dp.callback_query(F.data == "check_sub")
+async def check_sub_handler(callback: CallbackQuery):
+    await callback.answer()
+
+    user_id = callback.from_user.id
+
+    if await check_sub(user_id):
+        SUBSCRIBED.add(user_id)
+
+        await callback.message.answer(
+            "✅ Подписка подтверждена",
+            reply_markup=main_menu()
+        )
+    else:
+        await callback.message.answer(
+            "❌ Ты не подписан",
+            reply_markup=sub_kb()
+        )
+
+
+# =========================
+# МЕНЮ
+# =========================
+@dp.callback_query(F.data == "menu")
+async def menu(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer("🏠 Главное меню", reply_markup=main_menu())
+
+
+# =========================
+# FAQ
+# =========================
+@dp.callback_query(F.data == "faq")
+async def faq(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer("❓ Выбери вопрос:", reply_markup=faq_kb())
+
+
+@dp.callback_query(F.data.startswith("faq_"))
+async def faq_answer(callback: CallbackQuery):
+    await callback.answer()
+
+    index = int(callback.data.split("_")[1])
+    item = FAQ["faq"][index]
+
+    await callback.message.answer(
+        f"{item['q']}\n\n{item['a']}",
+        reply_markup=faq_kb()
+    )
+
+
+# =========================
+# ДОХОД
 # =========================
 @dp.callback_query(F.data == "earnings")
 async def earnings(callback: CallbackQuery):
     await callback.answer()
 
-    user_id = callback.from_user.id
-    USER_STAGE[user_id] = "warm"
+    USER_STAGE[callback.from_user.id] = "warm"
+    USER_STATE[callback.from_user.id] = "city"
 
-    EVENTS["earnings_open"] += 1
-
-    await callback.message.answer(
-        "📍 Напиши свой город\n\n"
-        "💡 Пример: Москва"
-    )
+    await callback.message.answer("📍 Напиши город", reply_markup=back_menu())
 
 
 # =========================
-# CITY HANDLER (PRO LOGIC)
+# ГОРОД
 # =========================
 @dp.message()
 async def city_handler(message: Message):
     user_id = message.from_user.id
 
-    if USER_STAGE.get(user_id) != "warm":
+    if USER_STATE.get(user_id) != "city":
+        # умный FAQ fallback
+        text = message.text.lower()
+
+        for item in FAQ["faq"]:
+            if any(k in text for k in item.get("keys", [])):
+                await message.answer(item["a"], reply_markup=reg_kb())
+                return
+
         return
 
-    city = message.text.lower().strip()
-
+    city = message.text.lower()
     data = EARNINGS.get(city)
 
     if not data:
@@ -108,35 +205,31 @@ async def city_handler(message: Message):
         return
 
     USER_STAGE[user_id] = "hot"
-    EVENTS["city_entered"] += 1
+    USER_STATE[user_id] = None
 
-    # 💣 PRO FOMO + CTA
     text = (
         f"📍 {data['city']}\n\n"
-        f"🚶 Пеший: {data['foot']}₽/час\n"
-        f"🚴 Вело: {data['bike']}₽/час\n"
-        f"🚗 Авто: {data['auto']}₽/час\n\n"
-        f"🔥 Сейчас высокий спрос в этом городе\n"
-        f"⚡ Подключаются новые курьеры прямо сегодня\n\n"
-        "👇 Начни сейчас"
+        f"🚶 {data['foot']}₽\n"
+        f"🚴 {data['bike']}₽\n"
+        f"🚗 {data['auto']}₽\n\n"
+        "🔥 Высокий спрос сейчас\n\n"
+        "👇 Начни зарабатывать"
     )
 
     await message.answer(text, reply_markup=reg_kb())
 
 
 # =========================
-# FAST LANE (ПРОДАЖА СРАЗУ)
+# START WORK
 # =========================
-@dp.callback_query(F.data == "start")
-async def fast_start(callback: CallbackQuery):
+@dp.callback_query(F.data == "start_work")
+async def start_work(callback: CallbackQuery):
     await callback.answer()
 
-    user_id = callback.from_user.id
-    USER_STAGE[user_id] = "hot"
+    USER_STAGE[callback.from_user.id] = "hot"
 
     await callback.message.answer(
         "🚀 Быстрый старт\n\n"
-        "💰 Можно начать за 15 минут\n\n"
         "👇 Подключение:",
         reply_markup=reg_kb()
     )
@@ -146,7 +239,7 @@ async def fast_start(callback: CallbackQuery):
 # RUN
 # =========================
 async def main():
-    print("🔥 ARBITRAGE PRO RUNNING")
+    print("🔥 FULL PRO BOT")
     await dp.start_polling(bot)
 
 
