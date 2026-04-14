@@ -1,11 +1,15 @@
 import asyncio
 import os
+import json
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+
+with open("faq.json", "r", encoding="utf-8") as f:
+    FAQ_DATA = json.load(f)
 
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
@@ -30,6 +34,16 @@ REGISTERED_USERS = set()
 # =========================
 # КНОПКИ
 # =========================
+def faq_kb():
+    kb = InlineKeyboardBuilder()
+
+    for i, item in enumerate(FAQ_DATA["faq"]):
+        kb.button(text=item["q"], callback_data=f"faq_{i}")
+
+    kb.button(text="⬅️ Назад", callback_data="menu")
+    kb.adjust(1)
+
+    return kb.as_markup()
 def main_menu():
     kb = InlineKeyboardBuilder()
     kb.button(text="🚴 Стать курьером", callback_data="new")
@@ -146,13 +160,21 @@ async def faq(callback: CallbackQuery):
     await callback.answer()
 
     await callback.message.answer(
-        "❓ Частые вопросы\n\n"
-        "💰 Доход: до 3000₽\n"
-        "📍 Опыт не нужен\n"
-        "📱 Нужен только телефон",
-        reply_markup=main_menu()
+        "❓ Выбери вопрос:",
+        reply_markup=faq_kb()
     )
 
+@dp.callback_query(F.data.startswith("faq_"))
+async def faq_answer(callback: CallbackQuery):
+    await callback.answer()
+
+    index = int(callback.data.split("_")[1])
+    item = FAQ_DATA["faq"][index]
+
+    await callback.message.answer(
+        f"{item['q']}\n\n{item['a']}",
+        reply_markup=faq_kb()
+    )
 
 # =========================
 # ПРОВЕРКА ПОДПИСКИ
