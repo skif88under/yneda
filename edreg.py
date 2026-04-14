@@ -1,5 +1,6 @@
 import asyncio
 import os
+import random
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery
@@ -15,28 +16,42 @@ CHANNEL_LINK = f"https://t.me/{CHANNEL_ID.replace('@', '')}"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+# =========================
+# ДАННЫЕ
+# =========================
+NAMES = ["Алексей", "Иван", "Дмитрий", "Максим", "Сергей"]
+
+CHAT_FLOW = [
+    "Сегодня сделал 3100₽ 🔥",
+    "Заказов реально много",
+    "Подключился вчера — уже работаю",
+    "Вечером пик, хорошо платят",
+]
 
 # =========================
 # КНОПКИ
 # =========================
-def sub_keyboard():
+def start_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="📢 Подписаться на канал", url=CHANNEL_LINK)
+    kb.button(text="🚀 Начать", callback_data="start_flow")
+    return kb.as_markup()
+
+def sub_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📢 Подписаться", url=CHANNEL_LINK)
     kb.button(text="✅ Я подписался", callback_data="check_sub")
     kb.adjust(1)
     return kb.as_markup()
 
-
-def reg_keyboard():
+def reg_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="🚴 Начать зарабатывать", url=REG_URL)
+    kb.button(text="🚴 Начать работу", url=REG_URL)
     return kb.as_markup()
-
 
 # =========================
 # ПРОВЕРКА ПОДПИСКИ
 # =========================
-async def check_subscription(user_id: int):
+async def check_subscription(user_id):
     for _ in range(2):
         try:
             member = await bot.get_chat_member(CHANNEL_ID, user_id)
@@ -47,81 +62,161 @@ async def check_subscription(user_id: int):
         await asyncio.sleep(2)
     return False
 
+# =========================
+# ЖИВОЙ ЧАТ (СЦЕНАРИЙ)
+# =========================
+async def live_chat(user_id):
+    try:
+        await asyncio.sleep(3)
+
+        await bot.send_message(user_id, "💬 Подключение к чату курьеров...")
+
+        await asyncio.sleep(2)
+
+        for _ in range(3):
+            name = random.choice(NAMES)
+            msg = random.choice(CHAT_FLOW)
+
+            await bot.send_message(
+                user_id,
+                f"👤 {name}: {msg}"
+            )
+
+            await asyncio.sleep(random.randint(2, 4))
+
+    except:
+        pass
 
 # =========================
-# START (ПРОДАЮЩИЙ)
+# ПРОГРЕВ ПЕРЕД РЕГОЙ
 # =========================
-@dp.message(CommandStart())
-async def start(message: Message):
-    text = (
-        "🚴‍♂️ Работа курьером Яндекс Еда\n\n"
-        "💰 Доход до 3000₽ в день\n"
-        "📍 Свободный график\n"
-        "⚡ Старт за 15 минут\n\n"
-        "👥 Уже работают 12 000+ курьеров\n\n"
-        "🔒 Доступ к заказам и инструкциям — только после подписки\n\n"
-        "👇 Подпишись, чтобы продолжить"
+async def pre_sell(user_id):
+    await asyncio.sleep(2)
+
+    await bot.send_message(
+        user_id,
+        "📊 Твой прогресс:\n\n"
+        "Шаг 1 ✅ Вход\n"
+        "Шаг 2 ✅ Доступ\n"
+        "Шаг 3 🔒 Регистрация\n"
     )
 
-    await message.answer(text, reply_markup=sub_keyboard())
+    await asyncio.sleep(2)
 
+    await bot.send_message(
+        user_id,
+        "💰 Чтобы начать получать заказы — нужно завершить регистрацию"
+    )
 
 # =========================
-# ПРОВЕРКА
+# ДОЖИМ X10
+# =========================
+async def reminder(user_id):
+    try:
+        await asyncio.sleep(600)
+
+        await bot.send_message(
+            user_id,
+            "⏳ Ты почти начал зарабатывать\n\n"
+            "Не хватает одного шага",
+            reply_markup=reg_kb()
+        )
+
+        await asyncio.sleep(3600)
+
+        await bot.send_message(
+            user_id,
+            "🔥 Сегодня высокий спрос на курьеров\n\n"
+            "Можно хорошо заработать",
+            reply_markup=reg_kb()
+        )
+
+        await asyncio.sleep(86400)
+
+        await bot.send_message(
+            user_id,
+            "🚀 Последний шанс подключиться\n\n"
+            "Места заканчиваются",
+            reply_markup=reg_kb()
+        )
+
+    except:
+        pass
+
+# =========================
+# START
+# =========================
+@dp.message(CommandStart(deep_link=True))
+async def start(message: Message, command: CommandStart):
+    user_name = message.from_user.first_name
+    source = command.args or "default"
+    spots = random.randint(5, 15)
+
+    if "seo" in source:
+        intro = "Ты искал работу курьером — ты по адресу 👇\n\n"
+    else:
+        intro = ""
+
+    text = (
+        f"{intro}"
+        f"👋 {user_name}, работа курьером Яндекс Еда\n\n"
+        "💰 Доход до 3000₽ в день\n"
+        "⚡ Старт за 15 минут\n\n"
+        f"⚠️ Осталось {spots} мест\n\n"
+        "👇 Начни сейчас"
+    )
+
+    await message.answer(text, reply_markup=start_kb())
+
+# =========================
+# FLOW
+# =========================
+@dp.callback_query(F.data == "start_flow")
+async def start_flow(callback: CallbackQuery):
+    await callback.message.answer(
+        "🔒 Проверка доступа...\n\n"
+        "📢 Подпишись на канал",
+        reply_markup=sub_kb()
+    )
+
+# =========================
+# CHECK
 # =========================
 @dp.callback_query(F.data == "check_sub")
 async def check_sub(callback: CallbackQuery):
     user_id = callback.from_user.id
 
-    await callback.answer("Проверяю...")
-
     if await check_subscription(user_id):
 
-        # основной оффер
+        await callback.message.answer("✅ Доступ подтверждён")
+
+        asyncio.create_task(live_chat(user_id))
+        asyncio.create_task(pre_sell(user_id))
+
+        await asyncio.sleep(6)
+
         await callback.message.answer(
-            "✅ Отлично!\n\n"
-            "🔥 Теперь ты получишь доступ к работе\n\n"
-            "👇 Пройди регистрацию:",
-            reply_markup=reg_keyboard()
+            "🔓 Доступ к системе открыт\n\n"
+            "💬 Чат курьеров разблокируется после регистрации\n\n"
+            "👇 Последний шаг:",
+            reply_markup=reg_kb()
         )
 
-        # 🔥 ДОЖИМ через 10 минут
-        asyncio.create_task(reminder(callback.from_user.id))
+        asyncio.create_task(reminder(user_id))
 
     else:
         await callback.message.answer(
-            "❌ Не вижу подписку\n\n"
-            "⚠️ Подпишись и попробуй снова",
-            reply_markup=sub_keyboard()
+            "❌ Подпишись на канал",
+            reply_markup=sub_kb()
         )
 
-
 # =========================
-# ДОЖИМ (КОНВЕРСИЯ x2)
-# =========================
-async def reminder(user_id: int):
-    await asyncio.sleep(600)  # 10 минут
-
-    try:
-        await bot.send_message(
-            user_id,
-            "⏳ Ты не завершил регистрацию\n\n"
-            "💰 Курьеры уже зарабатывают сегодня\n"
-            "Не упусти возможность\n\n"
-            "👇 Заверши регистрацию:",
-            reply_markup=reg_keyboard()
-        )
-    except:
-        pass
-
-
-# =========================
-# ЗАПУСК
+# RUN
 # =========================
 async def main():
-    print("Бот работает 🚀")
+    print("💣 X10 система запущена")
     await dp.start_polling(bot)
 
-
 if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())
