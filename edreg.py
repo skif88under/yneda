@@ -213,6 +213,7 @@ async def main():
     print("🔥 Бот с ветками запущен")
     await dp.start_polling(bot)
 
-
+print("TOKEN:", TOKEN)
+print("CHANNEL:", CHANNEL_ID)
 if __name__ == "__main__":
     asyncio.run(main())
