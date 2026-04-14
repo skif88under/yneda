@@ -11,6 +11,12 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 with open("faq.json", "r", encoding="utf-8") as f:
     FAQ_DATA = json.load(f)
 
+with open("cities.json", "r", encoding="utf-8") as f:
+    raw_data = json.load(f)
+
+# делаем быстрый доступ по городу
+EARNINGS = {item["city"].lower(): item for item in raw_data}
+
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 REG_URL = os.getenv("REG_URL")
@@ -46,6 +52,7 @@ def faq_kb():
     return kb.as_markup()
 def main_menu():
     kb = InlineKeyboardBuilder()
+    kb.button(text="💰 Узнать доход", callback_data="earnings")
     kb.button(text="🚴 Стать курьером", callback_data="new")
     kb.button(text="💬 Я уже курьер", callback_data="old")
     kb.button(text="❓ Вопросы", callback_data="faq")
@@ -66,6 +73,15 @@ def reg_kb():
     kb.button(text="🚀 Начать работу", url=REG_URL)
     return kb.as_markup()
 
+def transport_kb(city):
+    kb = InlineKeyboardBuilder()
+
+    kb.button(text="🚶 Пеший", callback_data=f"type_{city}_foot")
+    kb.button(text="🚴 Вело", callback_data=f"type_{city}_bike")
+    kb.button(text="🚗 Авто", callback_data=f"type_{city}_auto")
+
+    kb.adjust(1)
+    return kb.as_markup()
 
 # =========================
 # ПРОВЕРКА ПОДПИСКИ
@@ -129,10 +145,47 @@ async def start(message: Message):
 
     await message.answer(text, reply_markup=main_menu())
 
+@dp.message()
+async def city_handler(message: Message):
+    user_id = message.from_user.id
+
+    if USER_STATE.get(user_id) != "waiting_city":
+        return
+
+    city = message.text.lower().strip()
+
+    data = EARNINGS.get(city)
+
+    if not data:
+        await message.answer(
+            "❌ Город не найден\n\nПопробуй ещё раз"
+        )
+        return
+
+    USER_STATE[user_id] = f"city_{city}"
+
+    await message.answer(
+        f"📍 {data['city']}\n\nВыбери тип:",
+        reply_markup=transport_kb(data["city"])
+    )
+
 
 # =========================
 # ВЕТКИ
 # =========================
+USER_STATE = {}
+
+@dp.callback_query(F.data == "earnings")
+async def earnings_start(callback: CallbackQuery):
+    await callback.answer()
+
+    USER_STATE[callback.from_user.id] = "waiting_city"
+
+    await callback.message.answer(
+        "🏙️ Напиши свой город\n\n"
+        "Например: Москва"
+    )
+    
 @dp.callback_query(F.data == "new")
 async def new_user(callback: CallbackQuery):
     await callback.answer()
@@ -176,6 +229,30 @@ async def faq_answer(callback: CallbackQuery):
         reply_markup=faq_kb()
     )
 
+@dp.callback_query(F.data.startswith("type_"))
+async def show_earnings(callback: CallbackQuery):
+    await callback.answer()
+
+    _, city, t = callback.data.split("_", 2)
+
+    data = EARNINGS.get(city.lower())
+
+    if not data:
+        await callback.message.answer("❌ Ошибка")
+        return
+
+    money = data[t]
+
+    text = (
+        f"💰 {data['city']}\n\n"
+        f"🚴 Тип: {t}\n\n"
+        f"📈 {money}₽/час\n\n"
+        f"💵 ~{money * 8}₽ в день\n\n"
+        "🔥 Можно начать уже сегодня\n\n"
+        "👇 Начать:"
+    )
+
+    await callback.message.answer(text, reply_markup=reg_kb())
 # =========================
 # ПРОВЕРКА ПОДПИСКИ
 # =========================
