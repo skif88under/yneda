@@ -172,7 +172,37 @@ async def earnings(callback: CallbackQuery):
 
     await callback.message.answer("📍 Напиши город", reply_markup=back_menu())
 
+#
+async def show_earnings(message: Message, data: dict):
+    foot = data['foot']
+    bike = data['bike']
+    auto = data['auto']
 
+    text = (
+        f"📍 <b>{data['city']}</b>\n\n"
+
+        f"💰 <b>Заработок курьеров:</b>\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🚶 Пеший — <b>{foot}₽/час</b>\n"
+        f"🚴 Вело — <b>{bike}₽/час</b>\n"
+        f"🚗 Авто — <b>{auto}₽/час</b>\n"
+        f"━━━━━━━━━━━━━━━\n\n"
+
+        f"📊 <b>Пример дохода:</b>\n"
+        f"• Пеший: <b>{foot * 8:,}₽/день</b>\n"
+        f"• Вело: <b>{bike * 8:,}₽/день</b>\n"
+        f"• Авто: <b>{auto * 8:,}₽/день</b>\n\n"
+
+        f"💸 <b>В месяц:</b>\n"
+        f"• до <b>{auto * 8 * 25:,}₽</b>\n\n"
+
+        f"🔥 <b>Сейчас высокий спрос</b>\n"
+        f"⚡ Подключение занимает 10–15 минут\n\n"
+
+        f"👇 <b>Начни зарабатывать уже сегодня</b>"
+    )
+
+    await message.answer(text, reply_markup=reg_kb(), parse_mode="HTML")
 # =========================
 # ГОРОД
 # =========================
