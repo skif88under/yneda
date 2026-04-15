@@ -246,8 +246,7 @@ async def city_handler(message: Message):
         "👇 Начни зарабатывать"
     )
 
-    await message.answer(text, reply_markup=reg_kb())
-
+    await show_earnings(message, data)
 
 # =========================
 # START WORK
